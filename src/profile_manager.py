@@ -2,6 +2,7 @@ import config_manager
 import os
 from shutil import copyfileobj
 import shutil
+from xml.sax.saxutils import quoteattr
 
 
 class Profile_Manager(config_manager.Config_Manager):
@@ -74,15 +75,21 @@ class Profile_Manager(config_manager.Config_Manager):
     def write_xml(self, data):
         with open(self.root_dir+"/.config/config_template", "r", encoding="UTF-8") as fp:
             config_template = fp.read()
-            xml_string = []
 
-        for dat in data:
-            xml_string.append("<record from=\"{}\" to=\"graphics/pictures/person/r-{}/portrait\"/>".format(dat[1]+"/"+dat[2], dat[0]))
-
+        xml_string = ["<record from=\"{}/{}\" to=\"graphics/pictures/person/r-{}/portrait\"/>".format(
+                          dat[1], dat[2], dat[0]) for dat in data]
         xml_players = "\n".join(xml_string)
+        # folder or file names can contain characters that are not allowed in XML
+        if "&" in xml_players or "'" in xml_players or xml_players.count("<") != len(xml_string):
+            xml_string = ["<record from={} to=\"graphics/pictures/person/r-{}/portrait\"/>".format(
+                              quoteattr("{}/{}".format(dat[1], dat[2]), {'"': "&quot;"}), dat[0]) for dat in data]
+            xml_players = "\n".join(xml_string)
         xml_config = config_template.replace("[players]", xml_players)
-        with open(self.prf_cfg['img_dir']+"config.xml", 'w') as fp:
+        # write to a temporary file first, so a failed write never leaves a broken config.xml
+        config_path = self.prf_cfg['img_dir']+"config.xml"
+        with open(config_path+".tmp", 'w', encoding="UTF-8") as fp:
             fp.write(xml_config)
+        os.replace(config_path+".tmp", config_path)
         return xml_string
 
     def swap_xml(self, deact_name, act_name, deact_img_dir, act_img_dir):

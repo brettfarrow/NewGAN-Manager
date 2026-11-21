@@ -6,6 +6,7 @@ from config_manager import Config_Manager
 import shutil
 import itertools
 import os
+import tempfile
 
 
 class Test_Mapper_Generate_Mapping(unittest.TestCase):
@@ -130,6 +131,37 @@ class Test_Mapper_Generate_Mapping(unittest.TestCase):
         map_data = self.mapper.generate_mapping(parsedSquad, "Generate")
         for key in expectedOut:
             self.assertEqual(map_data[key][1], expectedOut[key])
+
+
+    def test_player_listed_twice_gets_one_face(self):
+        data = self.data_simple + self.data_simple
+        mapping = self.mapper.generate_mapping(data, "Generate")
+        self.assertEqual([m[0] for m in mapping], ["1915714540", "1915576430"])
+        self.assertEqual(len(self.mapper.eth_map["SpanMed"]), 19)
+
+    def test_invalid_ethnic_values_are_skipped(self):
+        data = [["1915714540", "ESP", None, ""], ["1915714541", "ESP", None, "-1"],
+                ["1915714542", "ESP", None, "x"], ["1915714543", "ESP", None, "11"],
+                ["1915714544", "ESP", None, "1"]]
+        mapping = self.mapper.generate_mapping(data, "Generate")
+        self.assertEqual([m[:2] for m in mapping], [["1915714544", "SpanMed"]])
+
+    def test_no_duplicates_until_pool_is_empty(self):
+        data = [[str(1915714540+i), "ESP", None, "1"] for i in range(25)]
+        mapping = self.mapper.generate_mapping(data, "Generate")
+        imgs = [m[2] for m in mapping]
+        self.assertEqual(len(imgs), 20)
+        self.assertEqual(set(imgs), set("SpanMed"+str(i) for i in range(20)))
+        self.assertEqual(len(self.mapper.eth_map["SpanMed"]), 0)
+
+    def test_only_images_are_used_as_faces(self):
+        img_dir = tempfile.mkdtemp()+"/"
+        os.makedirs(img_dir+"African")
+        for name in ["African1.png", "African.v2.PNG", "Thumbs.db", ".DS_Store", "readme.txt"]:
+            open(img_dir+"African/"+name, "w").close()
+        mapper = Mapper(img_dir, self.pm)
+        shutil.rmtree(img_dir)
+        self.assertEqual(mapper.eth_map, {"African": {"African1", "African.v2"}})
 
 
 class Test_Mapper_Preserve_Mapping(unittest.TestCase):
@@ -261,6 +293,17 @@ class Test_Mapper_Preserve_Mapping(unittest.TestCase):
                 sub_intersection.append(sub1_mapping)
         self.assertEqual(len(sub_intersection), 7)
         self.assertEqual(len(sub2_mapping), 12)
+
+
+    def test_preserve_only_blocks_faces_of_the_same_folder(self):
+        # the same file name can exist in more than one folder
+        self.mapper.eth_map["SpanMed"] = {"1", "2"}
+        self.mapper.eth_map["MESA"] = {"1"}
+        with open("newganmanager/test/config.xml", "w") as cfg:
+            cfg.write('<record from="SpanMed/1" to="graphics/pictures/person/r-1000000001/portrait"/>')
+        mapping = self.mapper.generate_mapping(self.data_simple, "Preserve")
+        self.assertEqual(mapping, [["1915714540", "SpanMed", "2"], ["1915576430", "MESA", "1"],
+                                   ["1000000001", "SpanMed", "1"]])
 
 
 class Test_Mapper_Overwrite_Mapping(unittest.TestCase):
