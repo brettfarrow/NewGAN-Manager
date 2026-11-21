@@ -4,10 +4,12 @@ from xmlparser import XML_Parser
 import logging
 
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg")
-# ethnic value 1: the first of these found in the players nationalities is used
-LIGHT_SKINNED_PRIORITY = ("South American", "YugoGreek", "SpanMed", "SAMed", "Italmed", "EECA")
-LIGHT_SKINNED_FALLBACK = frozenset(["Scandinavian", "Seasian", "Central European", "Caucasian",
-                                    "African", "Asian", "MENA", "MESA"])
+# Players with ethnic value 1 get the first of these folders that one of their
+# nationalities maps to
+ETHNIC_VALUE_1_FOLDER_ORDER = ("South American", "YugoGreek", "SpanMed", "SAMed", "Italmed", "EECA")
+# If their nationalities only map to these folders, they get South American instead
+ETHNIC_VALUE_1_SOUTH_AMERICAN_INSTEAD = frozenset(["Scandinavian", "Seasian", "Central European", "Caucasian",
+                                                   "African", "Asian", "MENA", "MESA"])
 
 class Mapper:
     def __init__(self, img_dir, prf_manager):
@@ -76,7 +78,7 @@ class Mapper:
                 elif mode == "Overwrite":
                     del xml_data[uid]
             if eth_val == "1":
-                p_ethnic = self._light_skinned_ethnic(n1_ethnic, n2_ethnic)
+                p_ethnic = self._folder_for_ethnic_value_1(n1_ethnic, n2_ethnic)
             elif eth_val in ("3", "6", "7", "8", "9"):
                 # SAMed with 7 is light-skinned
                 if "SAMed" == n1_ethnic and eth_val == "7":
@@ -120,12 +122,11 @@ class Mapper:
             self.post_rtf_hook(mapping, xml_data)
         return mapping
 
-    def _light_skinned_ethnic(self, n1_ethnic, n2_ethnic):
-        # the nationality with the highest priority decides
-        for eth in LIGHT_SKINNED_PRIORITY:
+    def _folder_for_ethnic_value_1(self, n1_ethnic, n2_ethnic):
+        for eth in ETHNIC_VALUE_1_FOLDER_ORDER:
             if eth == n1_ethnic or eth == n2_ethnic:
                 return eth
-        if n1_ethnic in LIGHT_SKINNED_FALLBACK or n2_ethnic in LIGHT_SKINNED_FALLBACK:
+        if n1_ethnic in ETHNIC_VALUE_1_SOUTH_AMERICAN_INSTEAD or n2_ethnic in ETHNIC_VALUE_1_SOUTH_AMERICAN_INSTEAD:
             return "South American"
         return None
 
