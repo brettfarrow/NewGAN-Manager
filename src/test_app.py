@@ -6,6 +6,8 @@ from xmlparser import XML_Parser
 from reporter import Reporter
 import os
 import shutil
+import tempfile
+import xml.dom.minidom
 
 
 class Test_Reporter(unittest.TestCase):
@@ -25,6 +27,63 @@ class Test_XML_Parser(unittest.TestCase):
     def test_get_imgpath_from_uid_negative(self):
         test_img = XML_Parser.get_imgpath_from_uid(None, "newganmanager/test/test.xml", '0000000000')
         self.assertIsNone(test_img)
+
+class Test_XML_Parser_Edge_Cases(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.xml = os.path.join(self.dir, "config.xml")
+
+    def tearDown(self):
+        shutil.rmtree(self.dir)
+
+    def write(self, content):
+        with open(self.xml, "w", encoding="UTF-8") as fp:
+            fp.write(content)
+
+    def record(self, img, uid):
+        return '<record from="'+img+'" to="graphics/pictures/person/r-'+uid+'/portrait"/>'
+
+    def test_commented_records_are_ignored(self):
+        self.write("<list>\n<!-- "+self.record("African/African1", "1111111111")+" -->\n"
+                   + self.record("Asian/Asian1", "2222222222")+"\n</list>")
+        self.assertDictEqual(XML_Parser().parse_xml(self.xml), {"2222222222": {"ethnicity": "Asian", "image": "Asian1"}})
+        self.assertIsNone(XML_Parser().get_imgpath_from_uid(self.xml, "1111111111"))
+        self.assertEqual(XML_Parser().get_imgpath_from_uid(self.xml, "2222222222"), "Asian/Asian1")
+
+    def test_uid_lookup_does_not_match_longer_uids(self):
+        self.write(self.record("African/African1", "91234567")+"\n"+self.record("Asian/Asian1", "1234567"))
+        self.assertEqual(XML_Parser().get_imgpath_from_uid(self.xml, "1234567"), "Asian/Asian1")
+        self.assertEqual(XML_Parser().get_imgpath_from_uid(self.xml, "91234567"), "African/African1")
+        self.assertIsNone(XML_Parser().get_imgpath_from_uid(self.xml, "234567"))
+        self.assertIsNone(XML_Parser().get_imgpath_from_uid(self.xml, ".*"))
+
+    def test_multiple_records_per_line(self):
+        self.write(self.record("African/African1", "1111111111")+self.record("Asian/Asian1", "2222222222"))
+        self.assertDictEqual(XML_Parser().parse_xml(self.xml), {
+            "1111111111": {"ethnicity": "African", "image": "African1"},
+            "2222222222": {"ethnicity": "Asian", "image": "Asian1"}})
+
+    def test_lookup_matches_parse_for_every_record(self):
+        self.write("\n".join(self.record("African/African"+str(i), str(1000000000+i)) for i in range(500)))
+        parsed = XML_Parser().parse_xml(self.xml)
+        self.assertEqual(len(parsed), 500)
+        for uid, values in parsed.items():
+            self.assertEqual(XML_Parser().get_imgpath_from_uid(self.xml, uid), values["ethnicity"]+"/"+values["image"])
+
+    def test_special_characters_survive_write_and_parse(self):
+        shutil.copyfile("newganmanager/.user/default_cfg.json", "newganmanager/testing/.user/cfg.json")
+        pm = Profile_Manager("No Profile", "newganmanager/testing")
+        pm.prf_cfg["img_dir"] = self.dir+"/"
+        data = [["1915714540", "African", "Tom & Jerry"], ["1915576430", "South American", "a\"b<c>'d"], ["1915576431", "Asian", "Asian1"]]
+        pm.write_xml(data)
+        xml.dom.minidom.parse(self.xml)  # raises if the file is not well-formed
+        parsed = XML_Parser().parse_xml(self.xml)
+        self.assertDictEqual(parsed, {d[0]: {"ethnicity": d[1], "image": d[2]} for d in data})
+        self.assertEqual(XML_Parser().get_imgpath_from_uid(self.xml, "1915714540"), "African/Tom & Jerry")
+        self.assertFalse(os.path.exists(self.xml+".tmp"))
+        shutil.rmtree("newganmanager/testing/.user/")
+        shutil.copytree("newganmanager/.user/", "newganmanager/testing/.user/")
+
 
 class Test_RTF_Parser(unittest.TestCase):
     def test_parse_rtf(self):
